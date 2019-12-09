@@ -1,2 +1,3 @@
 .ipynb_checkpoints
 fenics_data/*
+__pycache__
