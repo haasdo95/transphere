@@ -8,6 +8,9 @@ guohao/GHCN/data/raw/*
 guohao/GHCN/data/preprocessed/*
 !guohao/GHCN/data/preprocessed/.gitkeep
 
+guohao/GHCN/data/processed/*
+!guohao/GHCN/data/processed/.gitkeep
+
 ## IDE
 .vscode
 .idea
