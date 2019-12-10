@@ -1,0 +1,155 @@
+\documentclass[12pt]{article}
+ 
+\usepackage[margin=1in]{geometry} 
+\usepackage{algorithm, algorithmicx}
+\usepackage{algpseudocode}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{graphicx}
+\usepackage{physics}
+\usepackage{url}
+\usepackage{hyperref}
+\newtheorem{definition}{Definition}
+\setcounter{section}{-1}
+
+\newenvironment{statement}[2][Statement]{\begin{trivlist}
+\item[\hskip \labelsep {\bfseries #1}\hskip \labelsep {\bfseries #2.}]}{\end{trivlist}}
+
+\newcommand\SLASH{\char`\\}
+
+\newcommand{\R}{\ensuremath{
+    \rm I\!R}
+}
+\newcommand{\inner}[2]{\ensuremath{
+    \langle{#1}, {#2}\rangle
+}}
+
+\newcommand{\lie}[2]{\ensuremath{
+    \mathcal{L}_{#1}({#2})
+}}
+
+\newcommand{\vol}[1]{\ensuremath{
+    \text{vol}_{#1}
+}}
+
+\newcommand{\diver}[1]{\ensuremath{
+    \text{div}({#1})
+}}
+
+\begin{document}
+ 
+\title{Ideation}
+\author{LTS2 Bois} 
+\maketitle
+
+\section{Step 0: Goodness of Cotan}
+Assess how well both eigenvectors and eigenvalues behave with cotan formula and mass matrix. 
+
+Should pay attention to transferability at this early stage. Different graphs based on GHCN.
+\begin{itemize}
+    \item Build graph from all stations at a particular day(somewhere near 12k).
+    \item Build graph from all persistent stations throughout a specified time window. \\For example:
+    \begin{itemize}
+        \item Around 9000 if the window is taken as 30 days. 
+        \item Around 5500 if the window is taken as a year. 
+    \end{itemize}
+\end{itemize}
+Ideally, these graphs should have similar spectra. 
+
+\section{Step 1: GHCN Interpolation}
+\subsection{Definitions and Notations}
+\begin{definition}
+    At date $t$, the set of all stations is denoted as $S_t$
+\end{definition}
+\begin{definition}
+    Given time window $[T_1, T_2]$, the persistent set of stations throughout time window $[T_1, t_2]$, denoted as $\Pi_{[T_1, T_2]}$, is defined as
+    \[\Pi_{[T_1, T_2]} := \bigcap_{t=T_1}^{T_2} S_t\]
+\end{definition}
+It should be noted that given a time window $[T_1, T_2]$, the notion of persistent set of stations introduces a natural partition of $S_t$ for any $t\in [T_1, T_2]$. 
+\begin{definition}
+    Given time window $[T_1, T_2]$, the super set of stations throughout time window $[T_1, T_2]$, denoted as $\Omega_{[T_1, T_2]}$, is defined as
+    \[\Omega_{[T_1, T_2]} := \bigcup_{t=T_1}^{T_2} S_t\]
+\end{definition}
+
+\subsection{Graph Construction}
+Let $\mathcal{S}_n$ be the set of all sets of stations with cardinality $n$. And let 
+\[\text{MESH}_n: \mathcal{S}_n \to \R^{n\times n}\]
+be the map from point clouds of stations to Laplacian matrices of the graph constructed by convex hull. And 
+\[\text{kNN}_n: \mathcal{S}_n \to \R^{n\times n}\]
+is defined in exactly the same way. \\
+
+Then we need to define the masking operation, which is effectively cutting off the outgoing edges from a station while keeping the ingoing edges.  
+\[M_j: \R^{n\times n}\to \R^{n\times n}\]
+which works by setting $L_{ij} \gets 0 \;\; \forall \; i \neq j$
+
+Let $\tilde{L} := M_j(L)$, then
+\[(\tilde{L}x)_i = \sum_{k=1}^n \tilde{L}_{ik} x_k = \sum_{k\neq j} L_{ik} x_k, \;\;\; \forall \; i\neq j\]
+effectively removing the dependency on the knowledge of $x_j$, which we won't know when doing interpolation anyway. 
+
+The graph construction given a time window $[T_1, T_2]$ then works as following:
+\begin{itemize}
+    \item Let $\Pi_{[T_1, T_2]} \subset \omega \subset \Omega_{[T_1, T_2]}$. Preferably randomized. 
+    \item $L = \text{MESH} (w)$. 
+    \item Let $\pi \subset \Pi_{[T_1, T_2]}$. Preferably randomized. 
+    \item For each $s\in \omega \SLASH \pi$, $L \gets M_s(L)$.
+\end{itemize}
+By construction, for each $s\in S_t \SLASH \pi$, we actually have the ground truth data at $s$. Nonetheless, we'd like to pretend that we don't know the data during training in order to compute training loss, just like standard supervised regression tasks. 
+
+
+\section{Graph Convolution}
+In this section we take the graph Laplacian $L$ as given. The convolution is carried out in almost the same way as described in \cite{defferrard2016convolutional}, with some small but crucial twists. 
+
+If the parameterized monomial filter is used, according to \cite{defferrard2016convolutional} the filtering can be expressed as
+\[g_{\theta}(L) := \sum_{k=0}^{K-1} \theta_k L^k\]
+while the parameterized Chebyshev filter can be written as
+\[g_{\theta}(L) := \sum_{k=0}^{K-1} \theta_k T_k(\tilde{L})\]
+where 
+\begin{itemize}
+    \item we first need to rescale $L$, $\tilde{L} := 2L/\lambda_{\max} - I$. By doing this, the eigenvalues of $L$ are all in the range [-1, 1], making the Chebyshev polynomial well defined. 
+    \item we then need to compute $T_k(L)x$ recursively. Namely,
+\[T_0(\tilde{L})x = x,\;\; T_1(\tilde{L})x = \tilde{L}x,\;\; T_k(\tilde{L})x = 2\tilde{L}\;T_{k-1}(\tilde{L})x - T_{k-2}(\tilde{L})x\]
+\end{itemize}
+
+Monomial filter faces the problem of unbounded eigenvalues as $K$ grows large. In the meantime, the Chebyshev filter faces the problem of scaling the Laplacian incorrectly with different sampling size. We'll further discuss this difficulty later. \\
+
+The first important modification is to change the summation $\sum_{k=0}^{K-1}$ into $\sum_{k=1}^K$. By doing so, we make sure that output from the first convolution layer doesn't depend on the artificially hidden data. Together with masking Laplacian, we make sure the output from future layers won't depend on the hidden data either. 
+\newpage
+
+\section{Training and Testing}
+\subsection{Training}
+Let $\mathcal{T}$ be a set of time windows (not necessarily of the same length, not necessarily disjoint).\\
+Let \textbf{SAMPLE}$\omega$, \textbf{SAMPLE}$\pi$ be two randomized subprocedure that generate stream of $\omega$ and $\pi$. \\
+Let $d$ be the number of features used. Let $x_t: \omega \to \R^d$ be understood as the input feature function defined on the superset $\omega$, defined as
+\[x_t(s) = \begin{cases}
+    \text{feature set available at } s &\text{ if } s\in S_t\\
+    0 &\text{otherwise}
+\end{cases}\]
+Note that $x_t$ can also be viewed as a vector in $\R^{d\times|\omega|}$
+
+The pseudocode is as follows
+\begin{algorithm}
+    \caption{GHCN Interpolation: Training}
+    \label{training}
+    \begin{algorithmic}[1] % The number tells where the line numbering should start
+        \Procedure{training}{}
+            \For{$[T_1, T_2]\in \mathcal{T}$}
+                \State Compute $\Pi, \Omega$ of $[T_1, T_2]$
+                \For{$\Pi\subset\omega\subset\Omega \gets$ \textbf{SAMPLE}$\omega$}
+                    \State L = MESH($\omega$)
+                    \For{$\pi\subset\Pi \gets$ \textbf{SAMPLE}$\pi$}
+                        \State $\bar{L}\gets M_{\omega\SLASH\pi}(L)$  \Comment{shorthand for masking everything in the set $\omega\SLASH\pi$}
+                        \State GCN $\gets$ GCN($\bar{L}$)
+                        \For{$t\in[T_1, T_2]$}
+                            \State $y = $ GCN$(x_t) \in \R^{|\omega|}$  \Comment{$y\in\R^{|\omega|}$ is output of Dense Regression}
+                            \State loss := $\sum_{s\in S_t \SLASH \pi} [y(s) - y^*(s)]^2$ \Comment{Loss is computed only on $S_t\SLASH\pi$}
+                            \State loss.backprop()
+                        \EndFor
+                    \EndFor
+                \EndFor
+            \EndFor
+        \EndProcedure
+    \end{algorithmic}
+\end{algorithm}
+
+\bibliography{ideation}{}
+\bibliographystyle{plain}
+\end{document}
