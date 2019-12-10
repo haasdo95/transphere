@@ -121,6 +121,6 @@ def group_by_date(year, elems_wanted):
 
 if __name__ == '__main__':
     station_lookup = build_station_lookup_table()
-    generate_filtered_table("2018", ["TMAX", "TMIN"], lookup_table)
+    generate_filtered_table("2018", ["TMAX", "TMIN"], station_lookup)
     inner_join("2018", ["TMAX", "TMIN"])
     df_by_date = group_by_date("2018", ["TMAX", "TMIN"])
