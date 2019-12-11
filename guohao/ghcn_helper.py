@@ -1,4 +1,6 @@
 import pickle
+import sklearn
+from sklearn.neighbors import NearestNeighbors
 import numpy as np
 import pandas as pd
 
@@ -42,6 +44,62 @@ def geographical2spherical(latitude, longitude):
     return zenith, azimuth
 
 
+def chord_dist(coord_1, coord_2):
+    """
+    can serve as a metric for points on sphere
+    :param coord_1: (lat, lon) coordinate of the first
+    :param coord_2: (lat, lon) coordinate of the second
+    """
+    z1, a1 = geographical2spherical(*coord_1)
+    z2, a2 = geographical2spherical(*coord_2)
+    x1 = spherical2cartesian(z1, a1)
+    x2 = spherical2cartesian(z2, a2)
+    return np.linalg.norm(x1 - x2)
+
+
+def pre_coarsen(df: pd.DataFrame, threshold):
+    """
+    this is supposed to conduct a step of VERY mild coarsening
+    to remove stations that are simply too close to its neighbors
+    SKETCH: (1) compute for each vertex the dist to its nearest neighbor
+            (2) remove the vertex that has the smallest nearest neighbor
+            (3) repeat (1) and loop on
+    :param df: pandas data frame
+    :param threshold:
+        for threshold = 0.1 (smaller than 1 in general), we remove 10% of the stations
+        for threshold = 12 (> 1 in general), we remove that many stations
+    :return: coarsened data frame
+    """
+    df = df.copy()
+    if threshold > 1:
+        num_to_remove = threshold
+    else:
+        num_to_remove = int(len(df) * threshold)
+
+    points = df2points(df).T
+    assert points.shape[1] == 3
+    for i in range(num_to_remove):
+        nn = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(points)
+        distances, _ = nn.kneighbors(points)
+        distances = distances[:, 1]  # the first column is trivial
+        point_to_remove = np.argmin(distances)  # the point closest to its nn
+        print("{}-th removed point has nearest dist {}".format(i, distances[point_to_remove]))
+        # remove point from both points and dataframe
+        points = np.delete(points, axis=0, obj=point_to_remove)
+        df.drop(point_to_remove, inplace=True)
+        df.index = range(len(df))  # dropping will mess up the index; do so to fix it
+    return df
+
+
+def df2points(df):
+    """
+    :param df: a data frame with latitude & longitude information
+    :return: point cloud shaped as (3, N)
+    """
+    zeniths, azimuths = geographical2spherical(df["latitude"], df["longitude"])
+    return spherical2cartesian(zeniths, azimuths)
+
+
 def build_yearbook(date_start, date_end, elems_wanted):
     """
     [date_left, date_right], inclusive
@@ -60,19 +118,6 @@ def build_yearbook(date_start, date_end, elems_wanted):
             df_by_date = pickle.load(f)
         yearbook[year] = df_by_date
     return yearbook
-
-
-def chord_dist(coord_1, coord_2):
-    z1, a1 = geographical2spherical(*coord_1)
-    z2, a2 = geographical2spherical(*coord_2)
-    x1 = spherical2cartesian(z1, a1)
-    x2 = spherical2cartesian(z2, a2)
-    return np.linalg.norm(x1 - x2)
-
-
-def remove_dup(df):
-
-    pass
 
 
 def find_persistent_stations(date_start, date_end, yearbook):

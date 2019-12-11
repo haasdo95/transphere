@@ -5,8 +5,6 @@ See https://arxiv.org/abs/1606.09375 for details.
 Copyright 2018 Michaël Defferrard.
 Released under the terms of the MIT license.
 """
-
-
 import math
 
 import numpy as np
@@ -15,24 +13,41 @@ import scipy.sparse.linalg
 import torch
 
 
-def prepare_laplacian(laplacian, lmax):
+def mask_laplacian(laplacian, column_indices):
     """
-    Prepare a graph Laplacian to be fed to a graph convolutional layer by scaling
-    :param laplacian: sparse tensor shaped (V, V)
-    :param lmax: externally provided largest eigenvalue
+    THIS creates a deep copy of L before doing inplace masking
+    :param laplacian: COO-format sparse matrix
+    :param column_indices: vertices to mask
+    :return a COO-format sparse Laplacian
     """
-    # TODO: Masking vertices in Laplacian
+    assert column_indices.dtype == np.long
+    assert laplacian.format == "coo"
+    laplacian_csc = laplacian.tocsc()  # this actually creates a deep copy if L is not already CSC
+    assert laplacian_csc is not laplacian
+    laplacian_csc[:, column_indices] = 0
+    laplacian_csc.setdiag(0.0)
+    laplacian_csc.setdiag(-np.asarray(laplacian_csc.sum(axis=1)).squeeze())
+    return sparse.coo_matrix(laplacian_csc)
 
-    def scale_operator(L, lmax, scale=1):
-        r"""Scale the eigenvalues from [0, lmax] to [-scale, scale]."""
-        I = sparse.identity(L.shape[0], format=L.format, dtype=L.dtype)
-        L *= 2 * scale / lmax
-        L -= I
-        return L
 
-    # lmax = estimate_lmax(laplacian)
-    laplacian = scale_operator(laplacian, lmax)
+def scale_laplacian(laplacian, lmax):
+    """
+    scale Laplacian to make all eigenvalues between [-1, 1]
+    :param laplacian: any array shaped (V, V)
+    :param lmax: externally provided approximated largest eigenvalue
+    """
     laplacian = sparse.coo_matrix(laplacian)
+    I = sparse.identity(laplacian.shape[0], format=laplacian.format, dtype=laplacian.dtype)
+    scale = 1
+    laplacian *= 2 * scale / lmax
+    laplacian -= I
+    return laplacian
+
+
+def scipy2torch(laplacian):
+    """
+    :param laplacian: COO-format sparse matrix
+    """
     # PyTorch wants a LongTensor (int64) as indices (it'll otherwise convert).
     indices = np.empty((2, laplacian.nnz), dtype=np.int64)
     np.stack((laplacian.row, laplacian.col), axis=0, out=indices)
