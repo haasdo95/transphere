@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from ghcn_helper import build_yearbook, iterate_stations, find_all_stations, days_after
-from process_laplacian import compute_cotan_laplacian, diagonal_inverse, compute_lmax
+from process_laplacian import compute_cotan_laplacian, combine_cotan_mass, compute_lmax
 
 
 class GHCN(Dataset):
@@ -29,7 +29,7 @@ class GHCN(Dataset):
         self.graph_freezing = graph_freezing
         # load stuff up; this can take a little while
         self.yearbook = build_yearbook(date_start, date_end, elems_wanted)
-        self.df_by_date = list(iterate_stations(date_start, date_end, self.yearbook, black_list))
+        self.df_by_date = list(iterate_stations(date_start, date_end, self.yearbook))
         # things to keep track of during training
         self.current_laplacian = None  # the M^-1 @ L product
         self.current_lmax = None
@@ -45,12 +45,12 @@ class GHCN(Dataset):
             assert self.current_lmax is None
             # TODO: Build the graph
             # Very easy to make off-by-one error here; Remember that date ranges are inclusive
-            self.omega_stations = find_all_stations(date_str, days_after(date_str, self.graph_freezing-1),
-                                                    self.yearbook, )
+            self.omega_stations = find_all_stations(date_str,
+                                                    days_after(date_str, self.graph_freezing-1),
+                                                    self.yearbook)
             L, M = compute_cotan_laplacian(self.omega_stations)
-            laplacian = diagonal_inverse(M) @ L
-            lmax, _ = compute_lmax(laplacian)
-
+            laplacian = combine_cotan_mass(L, M)
+            lmax = compute_lmax(laplacian)
 
         # TODO: Some stuff in the middle
 

@@ -172,6 +172,8 @@ def find_persistent_stations(date_start, date_end, yearbook):
         if persistent_stations is None:  # first loop
             persistent_stations = df[["latitude", "longitude"]]
         else:
+            # NOTE: this drop_duplicates will also deal with station renaming, which is really insidious in that
+            # the (lat, lon) will be exactly the same
             persistent_stations = persistent_stations.join(df[["latitude", "longitude"]],
                                                            how="inner", rsuffix="_dup").drop_duplicates()
             persistent_stations.drop(["latitude_dup", "longitude_dup"], axis=1, inplace=True)
