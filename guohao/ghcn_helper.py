@@ -1,11 +1,25 @@
 import pickle
-import sklearn
 from sklearn.neighbors import NearestNeighbors
+from datetime import timedelta
 import numpy as np
 import pandas as pd
 
 
 path_template = "GHCN/data/processed/{}_{}_by_date.pkl"
+
+
+def df2points(df, elems_wanted=None):
+    """
+    :param df: a data frame with latitude & longitude information
+    :param elems_wanted: a list of string specifying what features you want. e.g. ["TMAX", "TMIN"]
+    :return: point cloud shaped as (3, N)
+    """
+    zeniths, azimuths = geographical2spherical(df["latitude"], df["longitude"])
+    points = spherical2cartesian(zeniths, azimuths)
+    if elems_wanted is not None:
+        features = df[elems_wanted].to_numpy().T
+        points = np.concatenate([points, features], axis=0)
+    return points
 
 
 def cartesian2spherical(x):
@@ -57,7 +71,7 @@ def chord_dist(coord_1, coord_2):
     return np.linalg.norm(x1 - x2)
 
 
-def pre_coarsen(df: pd.DataFrame, threshold):
+def pre_coarsen(df: pd.DataFrame, threshold, inplace):
     """
     this is supposed to conduct a step of VERY mild coarsening
     to remove stations that are simply too close to its neighbors
@@ -68,9 +82,11 @@ def pre_coarsen(df: pd.DataFrame, threshold):
     :param threshold:
         for threshold = 0.1 (smaller than 1 in general), we remove 10% of the stations
         for threshold = 12 (> 1 in general), we remove that many stations
-    :return: coarsened data frame
+    :param inplace: True if you want to do it inplace
+    :return: coarsened data frame & blacklist
     """
-    df = df.copy()
+    if not inplace:
+        df = df.copy()
     if threshold > 1:
         num_to_remove = threshold
     else:
@@ -86,18 +102,9 @@ def pre_coarsen(df: pd.DataFrame, threshold):
         print("{}-th removed point has nearest dist {}".format(i, distances[point_to_remove]))
         # remove point from both points and dataframe
         points = np.delete(points, axis=0, obj=point_to_remove)
-        df.drop(point_to_remove, inplace=True)
+        df.drop(df.index[point_to_remove], inplace=True)
         df.index = range(len(df))  # dropping will mess up the index; do so to fix it
     return df
-
-
-def df2points(df):
-    """
-    :param df: a data frame with latitude & longitude information
-    :return: point cloud shaped as (3, N)
-    """
-    zeniths, azimuths = geographical2spherical(df["latitude"], df["longitude"])
-    return spherical2cartesian(zeniths, azimuths)
 
 
 def build_yearbook(date_start, date_end, elems_wanted):
@@ -120,6 +127,38 @@ def build_yearbook(date_start, date_end, elems_wanted):
     return yearbook
 
 
+def date2str(date: pd.Timestamp):
+    assert type(date) is pd.Timestamp
+    return date.strftime("%Y%m%d")
+
+
+def str2date(date_str: str):
+    """
+    :param date_str: formatted like 20181231
+    :return:
+    """
+    assert type(date_str) is str
+    return pd.to_datetime(date_str, format="%Y%m%d")
+
+
+def days_after(date_str, days):
+    """
+    :return: days_after("20180102", 4) => "20180106"
+    """
+    date = str2date(date_str)
+    date += timedelta(days=days)
+    return date2str(date)
+
+
+def iterate_stations(date_start, date_end, yearbook):
+    date_range = pd.date_range(date_start, date_end)
+    for date in date_range:
+        df_by_date = yearbook[date.year]
+        date_str = date2str(date)
+        df = df_by_date.loc[date_str]  # df at date
+        yield date_str, df
+
+
 def find_persistent_stations(date_start, date_end, yearbook):
     """
     [date_left, date_right], inclusive
@@ -129,20 +168,14 @@ def find_persistent_stations(date_start, date_end, yearbook):
     :return:
     """
     persistent_stations = None
-    date_range = pd.date_range(date_start, date_end)
-    for date in date_range:
-        df_by_date = yearbook[date.year]
-        df = df_by_date.get_group(date.strftime("%Y%m%d"))  # df at date
+    for _, df in iterate_stations(date_start, date_end, yearbook):
         if persistent_stations is None:  # first loop
-            persistent_stations = df[["station_id", "latitude", "longitude"]]
+            persistent_stations = df[["latitude", "longitude"]]
         else:
-            persistent_stations = persistent_stations.merge(
-                df["station_id"], on="station_id", how="inner"
-            )
-    # remove dup in terms of latitude and longitude
+            persistent_stations = persistent_stations.join(df[["latitude", "longitude"]],
+                                                           how="inner", rsuffix="_dup").drop_duplicates()
+            persistent_stations.drop(["latitude_dup", "longitude_dup"], axis=1, inplace=True)
     print("Found {} persistent stations in date range {}-{}".format(len(persistent_stations), date_start, date_end))
-    persistent_stations.drop_duplicates(subset=["latitude", "longitude"], keep="last")
-    print("After removing dups: ", len(persistent_stations))
     return persistent_stations
 
 
@@ -154,17 +187,13 @@ def find_all_stations(date_start, date_end, yearbook):
     :param yearbook: a lookup table of {year: df_by_date}
     """
     all_stations = None
-    date_range = pd.date_range(date_start, date_end)
-    for date in date_range:
-        df_by_date = yearbook[date.year]
-        df = df_by_date.get_group(date.strftime("%Y%m%d"))  # df at date
+    for _, df in iterate_stations(date_start, date_end, yearbook):
         if all_stations is None:  # first loop
-            all_stations = df[["station_id", "latitude", "longitude"]]
+            all_stations = df[["latitude", "longitude"]]
         else:  # sql-style union
+
             all_stations = pd.concat(
-                [all_stations, df[["station_id", "latitude", "longitude"]]], ignore_index=True
-            ).drop_duplicates().reset_index(drop=True)
+                [all_stations, df[["latitude", "longitude"]]]).drop_duplicates()
+            # ).drop_duplicates().reset_index(drop=True)
     print("Found {} stations in total in date range {}-{}".format(len(all_stations), date_start, date_end))
-    all_stations.drop_duplicates(subset=["latitude", "longitude"], keep="last")
-    print("After removing dups: ", len(all_stations))
     return all_stations

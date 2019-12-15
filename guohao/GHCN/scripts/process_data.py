@@ -99,6 +99,7 @@ def inner_join(year, elems_wanted):
 def group_by_date(year, elems_wanted):
     """
     group by date before or after inner join
+    in each daily df, we let station_id be the index column
     :param year: e.g. "2018"
     :param elems_wanted: a list, e.g. ["TMAX", "TMIN"]
     :return:
@@ -114,6 +115,7 @@ def group_by_date(year, elems_wanted):
     path_to_filtered = "data/preprocessed/" + year + "_" + elems_wanted_str + ".csv"
     df = pd.read_csv(path_to_filtered, dtype=dtypes(elems_wanted_str))
     df_groupby_date = df.groupby("date")
+    df_groupby_date = df_groupby_date.apply(lambda df: df.set_index("station_id").drop("date", axis=1))
     with open(dest_path, "wb") as wf:
         pickle.dump(df_groupby_date, wf)
     return df_groupby_date

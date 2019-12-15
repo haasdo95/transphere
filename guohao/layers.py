@@ -13,23 +13,6 @@ import scipy.sparse.linalg
 import torch
 
 
-def mask_laplacian(laplacian, column_indices):
-    """
-    THIS creates a deep copy of L before doing inplace masking
-    :param laplacian: COO-format sparse matrix
-    :param column_indices: vertices to mask
-    :return a COO-format sparse Laplacian
-    """
-    assert column_indices.dtype == np.long
-    assert laplacian.format == "coo"
-    laplacian_csc = laplacian.tocsc()  # this actually creates a deep copy if L is not already CSC
-    assert laplacian_csc is not laplacian
-    laplacian_csc[:, column_indices] = 0
-    laplacian_csc.setdiag(0.0)
-    laplacian_csc.setdiag(-np.asarray(laplacian_csc.sum(axis=1)).squeeze())
-    return sparse.coo_matrix(laplacian_csc)
-
-
 def scale_laplacian(laplacian, lmax):
     """
     scale Laplacian to make all eigenvalues between [-1, 1]
