@@ -2,9 +2,11 @@
 this file helps us work with the graph Laplacian
 """
 from scipy.spatial import ConvexHull
+from scipy import sparse
 from scipy.sparse import csr_matrix, coo_matrix
 import numpy as np
 import igl
+import torch
 
 from ghcn_helper import df2points
 
@@ -26,6 +28,20 @@ def compute_cotan_laplacian(df):
     return L, M
 
 
+def scale_laplacian(laplacian, lmax):
+    """
+    scale Laplacian to make all eigenvalues between [-1, 1]
+    :param laplacian: sparse matrix of format CSR
+    :param lmax: externally provided approximated largest eigenvalue
+    :return sparse matrix format COO
+    """
+    I = sparse.identity(laplacian.shape[0], format=laplacian.format, dtype=laplacian.dtype)
+    scale = 1
+    laplacian *= 2 * scale / lmax
+    laplacian -= I
+    return coo_matrix(laplacian)
+
+
 def mask_laplacian(laplacian, column_indices):
     """
     THIS creates a deep copy of L before doing inplace masking
@@ -35,12 +51,30 @@ def mask_laplacian(laplacian, column_indices):
     """
     assert column_indices.dtype == np.long
     assert laplacian.format == "coo"
-    laplacian_csc = laplacian.tocsc()  # this actually creates a deep copy if L is not already CSC
-    assert laplacian_csc is not laplacian
-    laplacian_csc[:, column_indices] = 0
-    laplacian_csc.setdiag(0.0)
-    laplacian_csc.setdiag(-np.asarray(laplacian_csc.sum(axis=1)).squeeze())
-    return coo_matrix(laplacian_csc)
+    laplacian_sparse = laplacian.tocsr()  # this actually creates a deep copy if L is not already csr
+    assert laplacian_sparse is not laplacian
+    I = sparse.identity(laplacian.shape[0], format="csr")
+    I[column_indices, column_indices] = 0.0
+    laplacian_sparse = laplacian_sparse @ I
+    laplacian_sparse = laplacian_sparse.tolil()
+    laplacian_sparse.setdiag(0.0)
+    laplacian_sparse.setdiag(-np.asarray(laplacian_sparse.sum(axis=1)).squeeze())
+    laplacian = laplacian_sparse.tocoo()
+    return laplacian
+
+
+def scipy2torch(laplacian):
+    """
+    :param laplacian: COO-format sparse matrix
+    """
+    # PyTorch wants a LongTensor (int64) as indices (it'll otherwise convert).
+    indices = np.empty((2, laplacian.nnz), dtype=np.int64)
+    np.stack((laplacian.row, laplacian.col), axis=0, out=indices)
+    indices = torch.from_numpy(indices)
+
+    laplacian = torch.sparse_coo_tensor(indices, laplacian.data, laplacian.shape)
+    laplacian = laplacian.coalesce()  # More efficient subsequent operations.
+    return laplacian
 
 
 def combine_cotan_mass(L, M):

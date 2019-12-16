@@ -13,34 +13,6 @@ import scipy.sparse.linalg
 import torch
 
 
-def scale_laplacian(laplacian, lmax):
-    """
-    scale Laplacian to make all eigenvalues between [-1, 1]
-    :param laplacian: any array shaped (V, V)
-    :param lmax: externally provided approximated largest eigenvalue
-    """
-    laplacian = sparse.coo_matrix(laplacian)
-    I = sparse.identity(laplacian.shape[0], format=laplacian.format, dtype=laplacian.dtype)
-    scale = 1
-    laplacian *= 2 * scale / lmax
-    laplacian -= I
-    return laplacian
-
-
-def scipy2torch(laplacian):
-    """
-    :param laplacian: COO-format sparse matrix
-    """
-    # PyTorch wants a LongTensor (int64) as indices (it'll otherwise convert).
-    indices = np.empty((2, laplacian.nnz), dtype=np.int64)
-    np.stack((laplacian.row, laplacian.col), axis=0, out=indices)
-    indices = torch.from_numpy(indices)
-
-    laplacian = torch.sparse_coo_tensor(indices, laplacian.data, laplacian.shape)
-    laplacian = laplacian.coalesce()  # More efficient subsequent operations.
-    return laplacian
-
-
 # State-less function.
 def cheb_conv(laplacian, x, weight, skip):
     """

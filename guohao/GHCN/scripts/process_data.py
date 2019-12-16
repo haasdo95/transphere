@@ -115,7 +115,12 @@ def group_by_date(year, elems_wanted):
     path_to_filtered = "data/preprocessed/" + year + "_" + elems_wanted_str + ".csv"
     df = pd.read_csv(path_to_filtered, dtype=dtypes(elems_wanted_str))
     df_groupby_date = df.groupby("date")
-    df_groupby_date = df_groupby_date.apply(lambda df: df.set_index("station_id").drop("date", axis=1))
+    #  df3.loc[~df3.index.duplicated(keep='first')]
+
+    def remove_dup_index(d):
+        return d.loc[~d.index.duplicated(keep="first")]
+    df_groupby_date = df_groupby_date.apply(lambda df: remove_dup_index(df.set_index("station_id")
+                                            .drop("date", axis=1).sort_index()))
     with open(dest_path, "wb") as wf:
         pickle.dump(df_groupby_date, wf)
     return df_groupby_date

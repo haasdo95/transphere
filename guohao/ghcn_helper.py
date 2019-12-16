@@ -92,6 +92,8 @@ def pre_coarsen(df: pd.DataFrame, threshold, inplace):
     else:
         num_to_remove = int(len(df) * threshold)
 
+    blacklist = set()
+
     points = df2points(df).T
     assert points.shape[1] == 3
     for i in range(num_to_remove):
@@ -99,12 +101,13 @@ def pre_coarsen(df: pd.DataFrame, threshold, inplace):
         distances, _ = nn.kneighbors(points)
         distances = distances[:, 1]  # the first column is trivial
         point_to_remove = np.argmin(distances)  # the point closest to its nn
-        print("{}-th removed point has nearest dist {}".format(i, distances[point_to_remove]))
+        # print("{}-th removed point has nearest dist {}".format(i, distances[point_to_remove]))
         # remove point from both points and dataframe
         points = np.delete(points, axis=0, obj=point_to_remove)
-        df.drop(df.index[point_to_remove], inplace=True)
-        df.index = range(len(df))  # dropping will mess up the index; do so to fix it
-    return df
+        removed_station = df.index[point_to_remove]
+        blacklist.add(removed_station)
+        df.drop(removed_station, inplace=True)
+    return df, blacklist
 
 
 def build_yearbook(date_start, date_end, elems_wanted):
@@ -189,13 +192,16 @@ def find_all_stations(date_start, date_end, yearbook):
     :param yearbook: a lookup table of {year: df_by_date}
     """
     all_stations = None
+
+    def remove_dup_index(d):
+        return d.loc[~d.index.duplicated(keep="first")]
+
     for _, df in iterate_stations(date_start, date_end, yearbook):
         if all_stations is None:  # first loop
             all_stations = df[["latitude", "longitude"]]
         else:  # sql-style union
-
             all_stations = pd.concat(
-                [all_stations, df[["latitude", "longitude"]]]).drop_duplicates()
-            # ).drop_duplicates().reset_index(drop=True)
+                [all_stations, df[["latitude", "longitude"]]]).sort_index()
+            all_stations = remove_dup_index(all_stations)
     print("Found {} stations in total in date range {}-{}".format(len(all_stations), date_start, date_end))
     return all_stations
