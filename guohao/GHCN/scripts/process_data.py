@@ -2,6 +2,7 @@ import pandas as pd
 import pickle
 import numpy as np
 import os.path
+import sys
 
 
 def build_station_lookup_table():
@@ -127,7 +128,11 @@ def group_by_date(year, elems_wanted):
 
 
 if __name__ == '__main__':
+    year = sys.argv[1]
+    elems_wanted = sys.argv[2:]
+    print("Processing year {} with elems {}".format(year, elems_wanted))
     station_lookup = build_station_lookup_table()
-    generate_filtered_table("2018", ["TMAX", "TMIN"], station_lookup)
-    inner_join("2018", ["TMAX", "TMIN"])
-    df_by_date = group_by_date("2018", ["TMAX", "TMIN"])
+    generate_filtered_table(year, elems_wanted, station_lookup)
+    if len(elems_wanted) > 1:
+        inner_join(year, elems_wanted)
+    df_by_date = group_by_date(year, elems_wanted)
