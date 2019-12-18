@@ -133,11 +133,11 @@ class GHCNImpainter(Dataset):
         if idx % self.sampler.times == 0:  # recompute these guys only when a new ghcn_idx is seen
             self.masked_laplacian, self.x, self.non_zeros_indices = self.ghcn[ghcn_idx]
         # will be useful when figuring out the output of model at masked stations
-        idx_to_mask = self.sampler.sample(self.non_zeros_indices)
-        further_masked_laplacian = mask_laplacian(self.masked_laplacian, idx_to_mask)
+        idx_to_mask = self.sampler.sample(list(self.non_zeros_indices))
+        further_masked_laplacian = mask_laplacian(self.masked_laplacian, np.asarray(idx_to_mask, dtype=np.long))
         assert further_masked_laplacian is not self.masked_laplacian
         # mask the x as well
-        masked_x = self.x.copy()
+        masked_x = self.x.clone()
         masked_value = self.x[idx_to_mask]  # will serve as ground truth later
         masked_x[idx_to_mask] = 0.0
         return further_masked_laplacian, masked_x, idx_to_mask, masked_value
