@@ -4,6 +4,7 @@ Chebyshev polynomials of the graph Laplacian.
 See https://arxiv.org/abs/1606.09375 for details.
 Copyright 2018 Michaël Defferrard.
 Released under the terms of the MIT license.
+DO NORMALIZED
 """
 import math
 
@@ -97,14 +98,17 @@ class ChebConv(torch.nn.Module):
         Function which will perform the actual convolution.
     """
 
-    def __init__(self, in_channels, out_channels, kernel_size=3, bias=True,
+    def __init__(self, in_channels, out_channels, skip, kernel_size=3, bias=True,
                  conv=cheb_conv):
         super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
-        self._conv = conv
+
+        def _conv(laplacian, inputs, weight):
+            return conv(laplacian, inputs, weight, skip)
+        self._conv = _conv
 
         # shape = (kernel_size, out_channels, in_channels)
         shape = (in_channels, kernel_size, out_channels)
